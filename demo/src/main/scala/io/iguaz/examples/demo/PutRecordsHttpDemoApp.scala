@@ -4,10 +4,10 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 
 import org.apache.http.HttpResponse
-import org.apache.http.impl.client.CloseableHttpClient
 import org.apache.http.client.ResponseHandler
 import org.apache.http.client.methods.HttpPost
 import org.apache.http.entity.{ContentType, StringEntity}
+import org.apache.http.impl.client.CloseableHttpClient
 import org.apache.http.util.EntityUtils
 import org.apache.spark.sql.Row
 import org.slf4j._
@@ -15,12 +15,12 @@ import org.slf4j._
 import io.iguaz.v3io.util.UriUtils
 
 /**
-  * Usage:
-  * spark-submit \
-  * --class io.iguaz.v3io.spark.streaming.demo.PutRecordsHttpDemoApp \
-  * /full-path-to-the-jar.jar \
-  * [CONTAINER_NAME] [STREAM_NAME] [SHARDS_COUNT] [PUT_BATCH_SIZE] [ACCESS_KEY] [RECORDS_TO_GENERATE]
-  */
+ * Usage:
+ * spark-submit \
+ * --class io.iguaz.v3io.spark.streaming.demo.PutRecordsHttpDemoApp \
+ * /full-path-to-the-jar.jar \
+ * [CONTAINER_NAME] [STREAM_NAME] [SHARDS_COUNT] [PUT_BATCH_SIZE] [ACCESS_KEY] [RECORDS_TO_GENERATE]
+ */
 object PutRecordsHttpDemoApp {
   @transient private var log: Logger = LoggerFactory.getLogger(this.getClass.getName.stripSuffix("$"))
   private val defaultContainerName = "users"
@@ -63,34 +63,34 @@ object PutRecordsHttpDemoApp {
     val streamPath = UriUtils.fromString(inputArgs.stream).getPath
     val url = s"http://v3io-webapi:8081/${inputArgs.container}$streamPath/"
 
-    implicit val v3ioEndpoint = V3IOEndpoint(url, inputArgs.shards, inputArgs.accessKey)
+    implicit val v3ioEndpoint: V3IOEndpoint = V3IOEndpoint(url, inputArgs.shards, inputArgs.accessKey)
 
     // create sample dataframe that mimics the dataframe received from Kafka stream
     import spark.implicits._
     val df = (1 to inputArgs.recordsCount)
       .map(i => (i.toString, i.toLong))
-      .toDF("stringColumn", "longColumn");
+      .toDF("stringColumn", "longColumn")
 
     // Note, following block does not handle responses (foreach partition does not return response)
-    //    withTimer(s"Put ${inputArgs.recordsCount} records to V3IO stream ${inputArgs.stream} using web api") {
-    //      df.foreachPartition { rows =>
-    //        import org.apache.http.impl.client.HttpClients
-    //        implicit val httpClient = HttpClients.createDefault()
-    //        withClosableHttpClient("Transform rows to records and put them to V3IO stream") {
-    //          rows.grouped(putRecordsMaxBatchSize).foreach { batch =>
-    //            sendBatchToV3IOStream(batch)
-    //          }
-    //        }
-    //      }
-    //    }
+    /*    withTimer(s"Put ${inputArgs.recordsCount} records to V3IO stream ${inputArgs.stream} using web api") {
+          df.foreachPartition { rows =>
+            import org.apache.http.impl.client.HttpClients
+            implicit val httpClient = HttpClients.createDefault()
+            withClosableHttpClient("Transform rows to records and put them to V3IO stream") {
+              rows.grouped(putRecordsMaxBatchSize).foreach { batch =>
+                sendBatchToV3IOStream(batch)
+              }
+            }
+          }
+        }*/
 
     while (true) {
       // Note, this block use mapPartitions and therefore it is capable of returning responses for further processing
       val responses =
         withTimer(s"Put ${inputArgs.recordsCount} records to V3IO stream ${inputArgs.stream} using web api") {
           df.mapPartitions { rows =>
-
-            implicit val httpClient = HttpClients.createDefault()
+            import org.apache.http.impl.client.HttpClients
+            implicit val httpClient: CloseableHttpClient = HttpClients.createDefault()
             val responses = withClosableHttpClient("Transform rows to records and put them to V3IO stream") {
               rows.grouped(putRecordsMaxBatchSize).map { batch =>
                 sendBatchToV3IOStream(batch)
@@ -130,14 +130,12 @@ object PutRecordsHttpDemoApp {
     import org.json4s.JsonDSL._
     import org.json4s.jackson.JsonMethods._
     val json =
-    // stream path should not start with "/"; removing stream name from the body since it was added to the url
-    // ("StreamName" -> v3ioEndpoint.streamPath) ~
-      ("Records" -> records.map { record =>
-        (("ClientInfo" -> record.ClientInfo) ~
+      "Records" -> records.map { record =>
+        ("ClientInfo" -> record.ClientInfo) ~
           ("Data" -> record.Data) ~
           ("PartitionKey" -> record.PartitionKey) ~
-          ("ShardId" -> record.ShardId))
-      })
+          ("ShardId" -> record.ShardId)
+      }
     val body = compact(render(json))
     val httpPut = new HttpPost(v3ioEndpoint.streamUrl)
     httpPut.setHeader("X-v3io-function", "PutRecords")
@@ -173,8 +171,8 @@ object PutRecordsHttpDemoApp {
   private class BasicResponseHandler extends ResponseHandler[PutRecordsHttpDemoApp.Response] {
     override def handleResponse(response: HttpResponse): PutRecordsHttpDemoApp.Response = {
       //Get the status of the response
-      response.getStatusLine().getStatusCode() match {
-        case status if status >= 200 && status < 300 => Option(response.getEntity()) match {
+      response.getStatusLine.getStatusCode match {
+        case status if status >= 200 && status < 300 => Option(response.getEntity) match {
           case Some(entity) => Response(status, EntityUtils.toString(entity))
           case None => Response(status, "")
         }
